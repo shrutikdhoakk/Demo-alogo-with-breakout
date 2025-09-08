@@ -62,49 +62,11 @@ class BacktestEngine:
         # --- load YAML ---
         with open(config_path, "r", encoding="utf-8") as f:
             self.cfg: Dict[str, Any] = yaml.safe_load(f) or {}
-                        
-                                    
-            
-                                    
-                                    
-            
-            
-                                        
-                                    
-            
-                                    
-                                    
-            
-            
-                
-                                            
-                                    
-            
-                                    
-                                    
-            
-            
-                                        
-                                    
-            
-                                    
-                                    
-            
-            
-                
-                    
-            # Flatten nested 'strategycfg' into top-level keys (keep top-level on collision)
-            scfg = self.cfg.get('strategycfg')
-            if isinstance(scfg, dict):
-                for _k, _v in scfg.items():
-                    self.cfg.setdefault(_k, _v)
-            print(
-                "USING_PARAMS", "scope=engine_flat",
-                f"breakout_atr_buf={self.cfg.get('breakout_atr_buf')}",
-                f"trail_atr_mult={self.cfg.get('trail_atr_mult')}",
-                f"atr_pct_max={self.cfg.get('atr_pct_max')}",
-                sep=" | ",
-            )
+                # Merge nested 'strategycfg' block into top-level keys (keep top-level if both exist)
+                _scfg = self.cfg.get("strategycfg")
+                if isinstance(_scfg, dict):
+                    for _k, _v in _scfg.items():
+                        self.cfg.setdefault(_k, _v)
         # log what we loaded
         try:
             import json, hashlib
@@ -389,9 +351,5 @@ def main(argv=None) -> None:
 
 if __name__ == "__main__":
     main()
-
-
-
-
 
 

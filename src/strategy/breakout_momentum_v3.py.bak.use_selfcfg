@@ -184,7 +184,7 @@ class BreakoutMomentumV3:
         hh50_prev = prev.get("HH50", row.get("HH50", float("nan")))
         hh_prev   = max(hh20_prev, hh50_prev)
         atr14     = row.get("ATR14", float("nan"))
-        buf_mult  = float(getattr(self.cfg, 'breakout_atr_buf', 0.45))  # tighter default 0.45 ATR
+        buf_mult  = float(getattr(cfg, "breakout_atr_buf", 0.45))  # tighter default 0.45 ATR
         brk = (atr14 == atr14) and (hh_prev == hh_prev) and (row["Close"] > (hh_prev + buf_mult * atr14))
 
         day_rng = (row.get("High", float("nan")) - row.get("Low", float("nan")))
@@ -212,7 +212,7 @@ class BreakoutMomentumV3:
         patt_ok = bool(row.get("PatternConfirmed", False) or (row.get("PatternScore", 0) >= 60))
 
         # Volatility guard (tighter default 5.5%)
-        atr_pct_max = float(getattr(self.cfg, 'atr_pct_max', 0.055))
+        atr_pct_max = float(getattr(cfg, "atr_pct_max", 0.055))
         atr_pct_ok  = row.get("ATRPCT14", 1.0) <= atr_pct_max
 
         # Optional beta/delta gates
@@ -267,7 +267,6 @@ class BreakoutMomentumV3:
         drop_fail    = (atr == atr) and (drop_from_hi > 1.0 * atr)
 
         return bool(bear or shock or trail_break or rsi_fail or adx_collapse or atr_spike or drop_fail)
-
 
 
 
