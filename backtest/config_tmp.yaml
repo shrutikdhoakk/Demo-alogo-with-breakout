@@ -1,16 +1,4 @@
-TOTAL_CAPITAL: 1000000
-MAX_INVESTED: 900000
-PER_TRADE_RISK: 1500
-SLIPPAGE: 0.001
-FEE: 0.0003
-MAX_POSITIONS: 3
-strategycfg:
+﻿strategycfg:
   breakout_atr_buf: 0.25
   trail_atr_mult: 1.4
-  atr_pct_max: 0.1
-  gap_guard_atr: 0.75
-  ext_cap_atr: 2.5
-  trail_lookback: 8
-  atr_pct_spike: 0.1
-  shock_atr_mult: 1.0
-  gap_atr_mult: 0.75
+  atr_pct_max: 0.10

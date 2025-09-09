@@ -1,5 +1,33 @@
 ﻿"""Simple backtest engine for the Breakout Momentum strategy."""
 from __future__ import annotations
+# --- pattern gate hook (auto-injected) ---
+import os
+try:
+    from .pattern_gate import pattern_gate
+except Exception:
+    pattern_gate = None
+USE_PATTERN_GATE = os.environ.get("USE_PATTERN_GATE", "0") == "1"
+def _first_df_for_gate(ns):
+    try: import pandas as pd
+    except Exception: return None
+    for k in ('df_sym','df','ohlc','bars','data','frame','window'):
+        v = ns.get(k)
+        try:
+            if isinstance(v, pd.DataFrame):
+                cols = {c.lower() for c in v.columns}
+                if (_apply_pattern_gate(_first_df_for_gate(locals()), bool({'open','high','low','close'}.issubset(cols))) and ({'open','high','low','close'}.issubset(cols))):
+                    return v
+        except Exception:
+            pass
+    return None
+def _apply_pattern_gate(df, buy_signal):
+    if not USE_PATTERN_GATE or not buy_signal or pattern_gate is None:
+        return buy_signal
+    try:
+        return bool(buy_signal and pattern_gate(df).get("ok", False))
+    except Exception:
+        return False
+# --- end pattern gate hook ---
 
 import argparse
 from typing import Dict, Any, List, Optional
@@ -222,7 +250,7 @@ class BacktestEngine:
                     if trail_stop > pos["trail_stop"]:
                         pos["trail_stop"] = trail_stop
                 else:
-                    if (price - pos["entry"]) >= self.strategy.cfg.trail_trigger_atr * pos["atr"]:
+                    if (_apply_pattern_gate(_first_df_for_gate(locals()), bool((price - pos["entry"]) >= self.strategy.cfg.trail_trigger_atr * pos["atr"])) and ((price - pos["entry"]) >= self.strategy.cfg.trail_trigger_atr * pos["atr"])):
                         pos["trail_active"] = True
                         pos["trail_stop"] = price - pos["atr"] * getattr(self.strategy.cfg, "trail_atr_mult", getattr(self.strategy.cfg, "chandelier_mult", 1.3))
 
@@ -258,7 +286,7 @@ class BacktestEngine:
                 if df_sym is None: continue
                 j = _pos_at(df_sym, date)
                 if j is None: continue
-                invested_value += float(df_sym.iloc[j]["Close"]) * pos["shares"]
+                invested_value += float(df_sym.iloc[i]["Close"]) * pos["shares"]
             total_value = float(self.capital + invested_value)
             self.equity_curve.append({"date": date, "value": total_value})
 
@@ -287,10 +315,52 @@ class BacktestEngine:
                 close_px = float(row["Close"])
                 stop   = close_px - self.strategy.cfg.atr_stop_mult   * atr_val
                 target = close_px + self.strategy.cfg.atr_target_mult * atr_val
+                # --- trend / relative-strength filter ---
+                # derive current bar safely
+                k = _pos_at(df_sym, date)
+                if k is None or k < 252:
+                    continue
+                sma200 = df_sym['Close'].rolling(200, min_periods=200).mean().iloc[k]
+                hh252  = df_sym['Close'].rolling(252, min_periods=252).max().iloc[k]
+                px     = float(df_sym['Close'].iloc[k])
+                near_hi_pct = float(os.environ.get('RS_WITHIN_HI','0.05'))  # within 5% of 52w high by default
+                if (px < float(sma200)) or (px < float(hh252) * (1 - near_hi_pct)):
+                    continue
+                # ---------------------------------------
                 risk_per_share = close_px - stop
                 if risk_per_share <= 0: continue
-
-                shares = int(self.per_trade_risk / risk_per_share)
+
+                # pattern-gate before sizing (uses k from _pos_at)
+                k = _pos_at(df_sym, date)
+                if k is None:
+                    continue
+                if USE_PATTERN_GATE and pattern_gate is not None:
+                    try:
+                        g = pattern_gate(df_sym, now_idx=df_sym.index[k])
+                        if os.environ.get("GATE_DEBUG","0") == "1":
+                            print("GATE", sym, str(date), g)
+                        if not g.get("ok", False):
+                            continue
+                    except Exception as e:
+                        if os.environ.get("GATE_DEBUG","0") == "1":
+                            print("GATE_ERR", sym, str(date), repr(e))
+                        continue
+                    except Exception:
+                        continue
+                # --- pattern-gate DEBUG (before sizing) ---
+                if USE_PATTERN_GATE and pattern_gate is not None:
+                    try:
+                        g = pattern_gate(df_sym, now_idx=df_sym.index[k])
+                        if os.environ.get("GATE_DEBUG","0") == "1":
+                            print("GATE", sym, str(date), g)
+                        if not g.get("ok", False):
+                            continue
+                    except Exception as e:
+                        if os.environ.get("GATE_DEBUG","0") == "1":
+                            print("GATE_ERR", sym, str(date), repr(e))
+                        continue
+                # --- end pattern-gate DEBUG ---
+                shares = int((self.per_trade_risk * float(os.environ.get("RISK_BOOST","1"))) / risk_per_share)
                 if shares <= 0: continue
 
                 cost = shares * close_px
@@ -303,13 +373,13 @@ class BacktestEngine:
                     p2 = _pos_at(df2, date)
                     if p2 is None: continue
                     current_invested += float(df2.iloc[p2]["Close"]) * pos2["shares"]
-                cap_by_cash = int(self.capital // close_px)
-                cap_by_invested = int(max(0.0, self.max_invested - current_invested) // close_px)
+                lev = float(os.environ.get("LEV","1")); cap_by_cash = int((self.capital * lev) // close_px)
+                cap_by_invested = int(max(0.0, (self.max_invested * lev - current_invested)) // close_px)
                 shares = max(0, min(shares, cap_by_cash, cap_by_invested))
                 cost = shares * close_px
                 if shares < 1: continue
                 if cost > self.capital: continue
-                if current_invested + cost > self.max_invested: continue
+                if current_invested + cost > self.max_invested * lev: continue
 
                 entry_price = close_px * (1 + self.slippage)
                 self.capital -= cost + self.fee * cost
@@ -389,6 +459,20 @@ def main(argv=None) -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
